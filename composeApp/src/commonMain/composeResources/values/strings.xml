@@ -2475,4 +2475,7 @@
     <string name="stream_info_subtitle_source_embedded">Embedded</string>
     <string name="stream_info_player_engine">Player Engine</string>
     <string name="stream_info_server">Server</string>
+    <string name="streams_play_on_tv">Play on TV</string>
+    <string name="streams_tv_resolving">Preparing stream for TV…</string>
+    <string name="streams_tv_unsupported">This source does not provide a direct video link for TV playback.</string>
 </resources>

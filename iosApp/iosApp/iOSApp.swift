@@ -5,6 +5,8 @@ import ComposeApp
 struct iOSApp: App {
     @UIApplicationDelegateAdaptor(OrientationLockAppDelegate.self) private var appDelegate
 
+    init() { TvCompanion.shared.register(presenter: NuvioTvPresenter.shared) }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

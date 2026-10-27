@@ -31,6 +31,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Tv
+import com.nuvio.app.features.companion.TvCompanion
+import com.nuvio.app.features.companion.tvPlaybackPayload
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.Icon
@@ -302,6 +305,29 @@ fun StreamsScreen(
             stream = streamActionsTarget,
             externalPlayerEnabled = playerSettings.externalPlayerEnabled,
             onDismiss = { streamActionsTarget = null },
+            onPlayOnTv = { selected ->
+                downloadScope.launch {
+                    val stream = if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(selected)) {
+                        NuvioToastController.show(org.jetbrains.compose.resources.getString(Res.string.streams_tv_resolving))
+                        when (val result = DirectDebridPlaybackResolver.resolveToPlayableStream(selected, seasonNumber, episodeNumber)) {
+                            is DirectDebridPlayableResult.Success -> result.stream
+                            else -> {
+                                result.toastMessage()?.let { NuvioToastController.show(it) }
+                                return@launch
+                            }
+                        }
+                    } else selected
+                    val url = stream.playableDirectUrl
+                    if (url == null || !(url.startsWith("https://", true) || url.startsWith("http://", true))) {
+                        NuvioToastController.show(org.jetbrains.compose.resources.getString(Res.string.streams_tv_unsupported))
+                    } else {
+                        TvCompanion.play(tvPlaybackPayload(
+                            stream, title, parentMetaId, parentMetaType, videoId,
+                            seasonNumber, episodeNumber, episodeTitle, poster, background, logo
+                        ))
+                    }
+                }
+            },
             onCopyLink = { stream ->
                 val directUrl = stream.playableDirectUrl ?: stream.externalOpenUrl
                 if (!directUrl.isNullOrBlank()) {
@@ -993,6 +1019,7 @@ private fun StreamActionsSheet(
     stream: StreamItem?,
     externalPlayerEnabled: Boolean,
     onDismiss: () -> Unit,
+    onPlayOnTv: (StreamItem) -> Unit,
     onCopyLink: (StreamItem) -> Unit,
     onDownload: (StreamItem) -> Unit,
     onOpen: (StreamItem, openExternally: Boolean) -> Unit,
@@ -1043,6 +1070,18 @@ private fun StreamActionsSheet(
             }
 
             NuvioBottomSheetDivider()
+            if (TvCompanion.isAvailable) {
+                NuvioBottomSheetActionRow(
+                    icon = Icons.Rounded.Tv,
+                    title = stringResource(Res.string.streams_play_on_tv),
+                    onClick = {
+                        coroutineScope.launch {
+                            dismissNuvioBottomSheet(sheetState = sheetState, onDismiss = onDismiss)
+                            onPlayOnTv(stream)
+                        }
+                    },
+                )
+            }
             NuvioBottomSheetActionRow(
                 icon = Icons.Rounded.ContentCopy,
                 title = stringResource(Res.string.streams_copy_link),

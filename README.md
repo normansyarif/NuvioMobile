@@ -18,6 +18,15 @@
 - [Android APK](https://github.com/NuvioMedia/NuvioMobile/releases/latest)
 - iOS via AltStore or SideStore: add [this source URL](https://raw.githubusercontent.com/NuvioMedia/NuvioMobile/cmp-rewrite/store.json) in the app's Sources section, then install Nuvio.
 
+## Play on TV
+
+With companion-enabled Nuvio TV open on the same Wi-Fi, hold a stream on iOS and
+choose **Play on TV**. Allow Local Network access, select your TV, and enter the
+code shown on it. Pairing is remembered for future playback. The TV plays the
+video directly; the phone can lock after playback starts. This first version
+supports direct HTTP/HTTPS streams and debrid links resolved to HTTP/HTTPS.
+Both apps need builds containing the companion feature.
+
 ## Build from source
 
 ```bash
