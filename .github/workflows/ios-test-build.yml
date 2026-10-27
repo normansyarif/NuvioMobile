@@ -23,14 +23,14 @@ jobs:
   build:
     name: Build unsigned full ${{ inputs.configuration }} IPA
     runs-on: xcode-27
-    timeout-minutes: ${{ inputs.configuration == 'Release' && 75 || 30 }}
+    timeout-minutes: ${{ inputs.configuration == 'Release' && 75 || 60 }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       GRADLE_OPTS: -Dfile.encoding=UTF-8
       IOS_CONFIGURATION: ${{ inputs.configuration }}
       KOTLIN_DAEMON_JVMARGS: -Xmx2048M
-      NUVIO_GRADLE_JVMARGS: -Xmx4608M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M
-      NUVIO_KOTLIN_NATIVE_JVMARGS: -Xmx4608M
+      NUVIO_GRADLE_JVMARGS: -Xmx4096M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M
+      NUVIO_KOTLIN_NATIVE_JVMARGS: -Xmx4096M
       RELEASE_PROPERTIES_BASE64: ${{ secrets.NUVIO_LOCAL_PROPERTIES_BASE64 }}
 
     steps:
@@ -58,6 +58,17 @@ jobs:
         run: |
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Limit build memory for the standard macOS runner
+        run: |
+          # User-home properties take precedence over the checkout's 12 GB default.
+          # ORG_GRADLE_PROJECT_* does not configure the Gradle daemon's startup heap.
+          mkdir -p "${HOME}/.gradle"
+          {
+            printf '\norg.gradle.jvmargs=%s\n' "${NUVIO_GRADLE_JVMARGS}"
+            printf 'kotlin.native.jvmArgs=%s\n' "${NUVIO_KOTLIN_NATIVE_JVMARGS}"
+            printf 'org.gradle.workers.max=1\n'
+          } >> "${HOME}/.gradle/gradle.properties"
 
       - name: Configure runtime properties
         run: |
