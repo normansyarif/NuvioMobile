@@ -34,4 +34,14 @@ class TraktAuthRepositoryTest {
             )
         }
     }
+    @Test
+    fun `device authorization keeps pending requests alive and slows down when rate limited`() {
+        assertEquals(TraktDevicePollAction.PENDING, traktDevicePollAction(400))
+        assertEquals(TraktDevicePollAction.SLOW_DOWN, traktDevicePollAction(429))
+        assertEquals(TraktDevicePollAction.RETRY, traktDevicePollAction(503))
+        assertEquals(TraktDevicePollAction.APPROVED, traktDevicePollAction(200))
+        listOf(401, 404, 409, 410, 418).forEach {
+            assertEquals(TraktDevicePollAction.STOP, traktDevicePollAction(it))
+        }
+    }
 }

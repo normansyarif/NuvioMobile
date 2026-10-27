@@ -1301,7 +1301,7 @@
     <string name="settings_trakt_features">FEATURES</string>
     <string name="settings_trakt_finish_sign_in">Finish connection approval</string>
     <string name="settings_trakt_intro_description">Sync your watchlist, watch progress, continue watching, scrobbles, and personal lists with Trakt.</string>
-    <string name="settings_trakt_missing_credentials">Missing TRAKT_CLIENT_ID / TRAKT_CLIENT_SECRET in local.properties.</string>
+    <string name="settings_trakt_missing_credentials">Trakt is not configured in this build (missing client ID).</string>
     <string name="settings_trakt_open_login">Open Trakt Login</string>
     <string name="settings_trakt_save_actions_description">Sync your watchlist, watch progress, continue watching, scrobbles, and personal lists with Trakt.</string>
     <string name="settings_trakt_sign_in_description">Sync your watchlist, watch progress, continue watching, scrobbles, and personal lists with Trakt.</string>
@@ -2478,4 +2478,5 @@
     <string name="streams_play_on_tv">Play on TV</string>
     <string name="streams_tv_resolving">Preparing stream for TV…</string>
     <string name="streams_tv_unsupported">This source does not provide a direct video link for TV playback.</string>
+    <string name="settings_trakt_device_approval">Enter this code on the Trakt sign-in page, then approve access. Nuvio will connect automatically.</string>
 </resources>

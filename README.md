@@ -59,6 +59,35 @@ env NUVIO_IOS_DISTRIBUTION=full xcodebuild \
 
 The shared app is built with Kotlin Multiplatform and Compose Multiplatform.
 
+
+## Trakt and IntroDB in custom builds
+
+IntroDB reads use `https://api.introdb.app/` by default, with no API key required.
+An optional `INTRODB_API_URL` in local.properties overrides that endpoint; a blank
+value keeps the public default. Skip Intro must be enabled in player settings,
+and buttons appear only when IntroDB has timestamps for the selected episode.
+
+Trakt requires a client ID from your own application at
+https://developer.trakt.tv/apps. Add these to the ignored `local.properties`:
+
+```properties
+TRAKT_CLIENT_ID=your-client-id
+TRAKT_REDIRECT_URI=http://localhost
+```
+
+New Trakt applications do not issue a client secret. Both apps support Trakt's
+device-code flow with just the client ID: open Trakt settings, connect, and enter
+the displayed code on the Trakt approval page. A Development application limits
+sign-in to its owner and added members; its registered redirect URI can be
+`http://localhost` (unused during device approval, sent during token refresh).
+The iOS build retains its previous browser callback flow for legacy applications
+that configure a client secret.
+
+For GitHub's **Build Test IPA** workflow, add repository Actions variables
+`TRAKT_CLIENT_ID` and `TRAKT_REDIRECT_URI`. A `TRAKT_CLIENT_ID` Actions secret is
+also supported for existing setups. Keep access tokens and legacy client secrets
+out of commits and logs. Rebuild and reinstall after changing configuration.
+
 ## License
 
 [GNU General Public License v3.0](./LICENSE)

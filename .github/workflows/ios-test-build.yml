@@ -71,6 +71,10 @@ jobs:
           } >> "${HOME}/.gradle/gradle.properties"
 
       - name: Configure runtime properties
+        env:
+          TRAKT_CLIENT_ID: ${{ vars.TRAKT_CLIENT_ID || secrets.TRAKT_CLIENT_ID }}
+          TRAKT_REDIRECT_URI: ${{ vars.TRAKT_REDIRECT_URI }}
+          TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
         run: |
           if [[ -n "${RELEASE_PROPERTIES_BASE64}" ]]; then
             printf '%s' "${RELEASE_PROPERTIES_BASE64}" | base64 --decode > local.properties
@@ -79,6 +83,20 @@ jobs:
             # Forks do not inherit upstream secrets. Gradle still requires this input file.
             touch local.properties
           fi
+          # Dedicated fork secrets override bundled properties without entering source control.
+          python3 - <<'PYCONFIG'
+          import os
+          from pathlib import Path
+
+          def property_value(value):
+              return value.replace('\\', '\\\\').replace('\n', '\\n').replace('\r', '\\r')
+
+          with Path("local.properties").open("a") as properties:
+              for key in ("TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET", "TRAKT_REDIRECT_URI"):
+                  value = os.environ.get(key, "").strip()
+                  if value:
+                      properties.write("\n" + key + "=" + property_value(value) + "\n")
+          PYCONFIG
 
       - name: Prepare iOS dependencies
         run: ./scripts/prepare-ios-dependencies.sh

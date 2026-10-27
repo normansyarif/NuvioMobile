@@ -11,6 +11,11 @@ data class TraktAuthState(
     val expiresIn: Int? = null,
     val username: String? = null,
     val userSlug: String? = null,
+    val deviceCode: String? = null,
+    val userCode: String? = null,
+    val verificationUrl: String? = null,
+    val deviceCodeExpiresAtMillis: Long? = null,
+    val devicePollIntervalSeconds: Int = 5,
     val pendingAuthorizationState: String? = null,
     val pendingAuthorizationStartedAtMillis: Long? = null,
 ) {
@@ -25,6 +30,7 @@ enum class TraktConnectionMode {
 }
 
 data class TraktAuthUiState(
+    val userCode: String? = null,
     val mode: TraktConnectionMode = TraktConnectionMode.DISCONNECTED,
     val credentialsConfigured: Boolean = true,
     val isLoading: Boolean = false,

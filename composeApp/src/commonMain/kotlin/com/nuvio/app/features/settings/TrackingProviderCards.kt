@@ -109,6 +109,7 @@ import nuvio.composeapp.generated.resources.settings_tracking_approval_redirect
 import nuvio.composeapp.generated.resources.settings_tracking_disconnect_description
 import nuvio.composeapp.generated.resources.settings_tracking_disconnect_title
 import nuvio.composeapp.generated.resources.settings_tracking_not_connected
+import nuvio.composeapp.generated.resources.settings_trakt_device_approval
 import nuvio.composeapp.generated.resources.settings_trakt_approval_redirect
 import nuvio.composeapp.generated.resources.settings_trakt_connect
 import nuvio.composeapp.generated.resources.settings_trakt_connected_as
@@ -228,7 +229,8 @@ private fun TraktProviderCard(
         connectedDescription = stringResource(Res.string.settings_trakt_save_actions_description),
         signInDescription = stringResource(Res.string.settings_trakt_sign_in_description),
         finishSignInLabel = stringResource(Res.string.settings_trakt_finish_sign_in),
-        approvalDescription = stringResource(Res.string.settings_trakt_approval_redirect),
+        approvalDescription = stringResource(if (uiState.userCode != null) Res.string.settings_trakt_device_approval else Res.string.settings_trakt_approval_redirect),
+        authorizationCode = uiState.userCode,
         connectLabel = stringResource(Res.string.settings_trakt_connect),
         openLoginLabel = stringResource(Res.string.settings_trakt_open_login),
         disconnectLabel = stringResource(Res.string.settings_trakt_disconnect),
