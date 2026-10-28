@@ -35,6 +35,16 @@ import Security
             try check(TVWire.text(object, 3) == text, "Unicode text preserved")
             try check(TVWire.integer(object, 1) == UInt64(bitPattern: Int64(text.utf16.count - 1)), "IME indices use UTF16 including emoji and clearing")
         }
+        var input = TVInputState()
+        let snapshot = TVWire.bytes(1, TVWire.int(1, 3)) + TVWire.bytes(2, TVWire.int(1, 13) + TVWire.string(2, "first"))
+        try input.receive(number: 20, body: TVWire.fields(snapshot))
+        try check(input.session == 3 && input.revision == 13 && input.active, "Use both counters from active field snapshot")
+        try input.receive(number: 21, body: TVWire.fields(TVWire.int(1, 1) + TVWire.int(2, 1)))
+        try check(input.session == 3 && input.revision == 13, "Empty initial acknowledgement must not roll back counters")
+        try input.receive(number: 22, body: TVWire.fields(TVWire.bytes(2, TVWire.int(1, 14) + TVWire.string(2, "edited 📺"))))
+        try check(input.session == 3 && input.revision == 14 && input.text == "edited 📺", "Field revision updates without changing session")
+        try input.receive(number: 20, body: TVWire.fields(TVWire.bytes(1, TVWire.int(1, 4))))
+        try check(!input.active && input.text.isEmpty, "App switch clears active input")
         let attributes: [String: Any] = [kSecAttrKeyType as String: kSecAttrKeyTypeRSA, kSecAttrKeySizeInBits as String: 2048]
         let key = SecKeyCreateRandomKey(attributes as CFDictionary, nil)!
         try check(try TVDER.rsaParts(SecKeyCopyPublicKey(key)!).count == 259, "RSA hash inputs contain unsigned modulus and exponent")

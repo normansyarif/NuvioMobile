@@ -165,29 +165,29 @@ private struct TvKeyboardView: View {
     @ObservedObject var remote: AndroidTvRemote
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
-    @State private var sent = false
     @FocusState private var focused: Bool
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Text for TV", text: $text, axis: .vertical)
+                    TextField("Text to insert on TV", text: $text, axis: .vertical)
                         .lineLimit(1...6).focused($focused).autocorrectionDisabled()
                         .textInputAutocapitalization(.never).disabled(!remote.connected || !remote.fieldActive)
-                        .onChange(of: text) { _ in sent = false }
                         .accessibilityLabel("Text for the active TV field")
-                    Button(sent ? "Sent" : "Send to TV") { remote.sendText(text); sent = true }
-                        .disabled(!remote.connected || !remote.fieldActive || text.utf8.count > 16_384)
+                    Button("Send to TV") { remote.sendText(text); text = "" }
+                        .disabled(!remote.connected || !remote.fieldActive || text.isEmpty || text.utf8.count > 16_384)
+                    Button("Backspace on TV", systemImage: "delete.left") { remote.key(67) }
+                        .disabled(!remote.connected || !remote.fieldActive)
                     Button("Enter / Search") { remote.key(66) }.disabled(!remote.connected || !remote.fieldActive)
                 } header: { Text(remote.fieldLabel) } footer: {
-                    Text(remote.fieldActive ? "Send replaces the active field’s text. Choose Enter / Search to submit it." : "Use the remote to select a text field on your TV first. Some apps use a custom keyboard that doesn’t accept remote text.")
+                    Text(remote.fieldActive ? "Send inserts text at the TV cursor. Backspace deletes on the TV; Enter / Search submits the field." : "Use the remote to select a text field on your TV first. Some apps use a custom keyboard that doesn’t accept remote text.")
                 }
             }
             .navigationTitle("TV keyboard").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-            .onAppear { text = remote.fieldText; focused = remote.fieldActive }
+            .onAppear { focused = remote.fieldActive }
             .onChange(of: remote.fieldActive) { active in
-                if active { text = remote.fieldText; focused = true }
+                if active { focused = true }
                 else { focused = false }
             }
         }.preferredColorScheme(.dark)

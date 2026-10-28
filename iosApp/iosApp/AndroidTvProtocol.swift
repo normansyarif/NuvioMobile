@@ -268,3 +268,41 @@ final class TVRemoteTransport {
     func close() { timeout?.cancel(); timeout = nil; connection?.cancel(); connection = nil; frames = TVFrameBuffer(); peerCertificate = nil }
     deinit { connection?.cancel(); timeout?.cancel() }
 }
+
+/// Input session and content revision are different counters. The TV ignores
+/// edits if either is stale. Keep this state separate from keyboard presentation.
+struct TVInputState {
+    private(set) var session: UInt64 = 0
+    private(set) var revision: UInt64 = 0
+    private(set) var active = false
+    private(set) var text = ""
+    private(set) var label = "TV keyboard"
+    mutating func receive(number: Int, body: [TVWire.Field]) throws {
+        switch number {
+        case 20:
+            if let app = TVWire.data(body, 1) { session = TVWire.integer(try TVWire.fields(app), 1) }
+            if let status = TVWire.data(body, 2) { try snapshot(status) }
+            else { active = false; text = ""; revision = 0 }
+        case 21:
+            // On connect Android TV sends an empty initial batch with default
+            // counters, even after a fresh snapshot. Preserve that snapshot.
+            if let edit = TVWire.data(body, 3) {
+                session = TVWire.integer(body, 1); revision = TVWire.integer(body, 2)
+                if let object = TVWire.data(try TVWire.fields(edit), 2) {
+                    text = TVWire.text(try TVWire.fields(object), 3)
+                }
+            } else if !active { session = TVWire.integer(body, 1); revision = TVWire.integer(body, 2) }
+        case 22:
+            if let status = TVWire.data(body, 2) { try snapshot(status) }
+        default: break
+        }
+    }
+    private mutating func snapshot(_ data: Data) throws {
+        let fields = try TVWire.fields(data)
+        revision = TVWire.integer(fields, 1)
+        text = TVWire.text(fields, 2)
+        let title = TVWire.text(fields, 6)
+        label = title.isEmpty ? "TV keyboard" : title
+        active = true
+    }
+}

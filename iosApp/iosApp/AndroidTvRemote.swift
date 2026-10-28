@@ -33,8 +33,7 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
     private var deadline: DispatchWorkItem?
     private var identity: SecIdentity?
     private var features: UInt64 = 0
-    private var imeCounter: UInt64 = 0
-    private var fieldCounter: UInt64 = 0
+    private var input = TVInputState()
     private var discovering = false
     var connected: Bool { state == .connected }
     var supportsKeyboard: Bool { features & 4 != 0 }
@@ -144,9 +143,9 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
         transport?.send(TVWire.bytes(90, TVWire.string(1, "nuvio-tv://home")))
     }
     func sendText(_ text: String) {
-        guard connected, supportsKeyboard, fieldActive else { return }
+        guard connected, supportsKeyboard, fieldActive, !text.isEmpty else { return }
         guard text.utf8.count <= 16_384 else { message = "Please send a shorter text (up to 16 KB)."; return }
-        transport?.send(TVWire.edit(text, ime: imeCounter, field: fieldCounter))
+        transport?.send(TVWire.edit(text, ime: input.session, field: input.revision))
     }
     private func makeTransport() -> TVRemoteTransport {
         let transport = TVRemoteTransport()
@@ -191,16 +190,9 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
                 case 2: transport?.send(TVWire.bytes(2, TVWire.int(1, features)))
                 case 3: message = "The TV couldn’t accept that command. Check the active TV app and try again."
                 case 8: transport?.send(TVWire.bytes(9, TVWire.int(1, TVWire.integer(body, 1))))
-                case 20:
-                    if let status = TVWire.data(body, 2) { try updateField(status) }
-                    else { fieldActive = false; fieldText = "" }
-                case 21:
-                    imeCounter = TVWire.integer(body, 1); fieldCounter = TVWire.integer(body, 2)
-                    if let edit = TVWire.data(body, 3), let status = TVWire.data(try TVWire.fields(edit), 2) {
-                        fieldText = TVWire.text(try TVWire.fields(status), 3)
-                    }
-                case 22:
-                    if let status = TVWire.data(body, 2) { try updateField(status) }
+                case 20, 21, 22:
+                    try input.receive(number: field.number, body: body)
+                    fieldActive = input.active; fieldText = input.text; fieldLabel = input.label
                 case 40:
                     isOn = TVWire.integer(body, 1) != 0
                     state = .connected; deadline?.cancel()
@@ -214,14 +206,6 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
             }
         } catch { fail(error.localizedDescription) }
     }
-    private func updateField(_ data: Data) throws {
-        let fields = try TVWire.fields(data)
-        fieldCounter = TVWire.integer(fields, 1)
-        fieldText = TVWire.text(fields, 2)
-        let label = TVWire.text(fields, 6)
-        fieldLabel = label.isEmpty ? "TV keyboard" : label
-        fieldActive = true
-    }
     private func armDeadline(_ seconds: Double, _ message: String) {
         deadline?.cancel()
         let deadline = DispatchWorkItem { [weak self] in self?.fail(message) }
@@ -231,7 +215,7 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
     private func cancelConnection() {
         deadline?.cancel(); deadline = nil
         transport?.onError = nil; transport?.onFrame = nil; transport?.close(); transport = nil
-        fieldActive = false; fieldText = ""; isOn = nil; volume = nil; features = 0; imeCounter = 0; fieldCounter = 0
+        fieldActive = false; fieldText = ""; isOn = nil; volume = nil; features = 0; input = TVInputState()
     }
     private func fail(_ text: String) { cancelConnection(); state = .disconnected; message = text }
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
