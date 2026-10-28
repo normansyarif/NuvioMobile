@@ -210,8 +210,10 @@ final class TVRemoteTransport {
     private var connection: NWConnection?
     private var frames = TVFrameBuffer()
     private var timeout: DispatchWorkItem?
+    private var monitorsLiveness = false
     func open(host: String, port: UInt16, identity: SecIdentity, expectedPeer: Data?) throws {
         close()
+        monitorsLiveness = port == 6466
         guard let localIdentity = sec_identity_create(identity) else { throw TVRemoteError.message("Couldn’t load the remote identity.") }
         let tls = NWProtocolTLS.Options()
         sec_protocol_options_set_local_identity(tls.securityProtocolOptions, localIdentity)
@@ -235,7 +237,7 @@ final class TVRemoteTransport {
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard let self, self.connection === connection else { return }
             switch state {
-            case .ready: self.timeout?.cancel(); self.onReady?(); self.receive()
+            case .ready: self.timeout?.cancel(); self.refreshLiveness(); self.onReady?(); self.receive()
             case .failed(let error): self.fail(error.localizedDescription)
             case .waiting: break // Bounded by the connection deadline.
             default: break
@@ -257,12 +259,21 @@ final class TVRemoteTransport {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self, weak connection] data, _, complete, error in
             guard let self, self.connection === connection else { return }
             do {
-                if let data { for frame in try self.frames.append(data) { self.onFrame?(frame) } }
+                if let data, !data.isEmpty { self.refreshLiveness(); for frame in try self.frames.append(data) { self.onFrame?(frame) } }
                 if let error { self.fail(error.localizedDescription) }
                 else if complete { self.fail("TV disconnected. Tap Connect to reconnect.") }
                 else { self.receive() }
             } catch { self.fail(error.localizedDescription) }
         }
+    }
+    private func refreshLiveness() {
+        guard monitorsLiveness else { return }
+        timeout?.cancel()
+        // The TV normally pings every five seconds. A broken connection must
+        // not keep displaying a green connected indicator indefinitely.
+        let deadline = DispatchWorkItem { [weak self] in self?.fail("TV stopped responding. Tap Connect to reconnect.") }
+        timeout = deadline
+        DispatchQueue.main.asyncAfter(deadline: .now() + 16, execute: deadline)
     }
     private func fail(_ message: String) { close(); onError?(message) }
     func close() { timeout?.cancel(); timeout = nil; connection?.cancel(); connection = nil; frames = TVFrameBuffer(); peerCertificate = nil }
