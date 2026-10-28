@@ -1,4 +1,6 @@
 import UIKit
+import SwiftUI
+import Combine
 import Security
 import ComposeApp
 
@@ -14,6 +16,8 @@ final class NuvioTvPresenter: NSObject, TvCompanionPresenter {
             self.presentPicker(payload)
         }
     }
+
+    func presentRemote() { present(payloadJson: "{}") }
 
     private func presentPicker(_ payload: [String: Any]) {
         guard picker == nil,
@@ -97,6 +101,9 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
     private var busy = false
     private var pairingChallenges: [String: (id: String, expires: Date, attempts: Int)] = [:]
     private let statusLabel = UILabel()
+    private lazy var remoteHost = UIHostingController(rootView: TvRemoteView())
+    private var remoteObservation: AnyCancellable?
+    private var hasPlayback: Bool { payload["url"] is String }
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 10
@@ -109,7 +116,7 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
     init(payload: [String: Any]) {
         self.payload = payload
         super.init(style: .insetGrouped)
-        title = "Play on TV"
+        title = payload["url"] is String ? "Play on TV" : "Remote"
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
@@ -123,6 +130,12 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
         statusLabel.textColor = .secondaryLabel
         statusLabel.textAlignment = .center
         statusLabel.accessibilityTraits = .updatesFrequently
+        addChild(remoteHost)
+        remoteHost.view.backgroundColor = .clear
+        remoteHost.didMove(toParent: self)
+        remoteObservation = AndroidTvRemote.shared.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.layoutStatus(); self?.tableView.reloadData() }
+        }
         search()
     }
 
@@ -144,15 +157,18 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
         browser.stop()
         services.forEach { $0.stop() }
         discoveryTimeout?.cancel()
+        AndroidTvRemote.shared.stopDiscovery()
     }
 
     @objc private func search() {
         guard !busy else { return }
+        AndroidTvRemote.shared.refresh()
         browser.stop()
         services.forEach { $0.stop() }
         services.removeAll()
         devices.removeAll()
         tableView.reloadData()
+        if !hasPlayback { setStatus(""); return }
         setStatus("Looking for Nuvio TVs…\nKeep Nuvio open on your TV and connect both devices to the same Wi-Fi.")
         browser.delegate = self
         browser.searchForServices(ofType: "_nuvio-tv._tcp.", inDomain: "local.")
@@ -173,13 +189,16 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
     private func layoutStatus() {
         let width = tableView.bounds.width
         guard width > 48 else { return }
-        let height = statusLabel.sizeThatFits(CGSize(width: width - 48, height: .greatestFiniteMagnitude)).height + 48
+        let statusHeight: CGFloat = (statusLabel.text ?? "").isEmpty ? 12 : statusLabel.sizeThatFits(CGSize(width: width - 48, height: .greatestFiniteMagnitude)).height + 36
+        let remoteSize = remoteHost.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+        let height = statusHeight + remoteSize.height
         let footer = tableView.tableFooterView ?? UIView()
-        let frame = CGRect(x: 0, y: 0, width: width, height: height)
-        statusLabel.frame = CGRect(x: 24, y: 20, width: width - 48, height: height - 40)
+        statusLabel.frame = CGRect(x: 24, y: 12, width: width - 48, height: max(0, statusHeight - 24))
         if statusLabel.superview !== footer { footer.addSubview(statusLabel) }
-        if footer.frame.size != frame.size || tableView.tableFooterView == nil {
-            footer.frame.size = frame.size
+        if remoteHost.view.superview !== footer { footer.addSubview(remoteHost.view) }
+        remoteHost.view.frame = CGRect(x: 0, y: statusHeight, width: width, height: remoteSize.height)
+        if abs(footer.frame.height - height) > 1 || footer.frame.width != width || tableView.tableFooterView == nil {
+            footer.frame.size = CGSize(width: width, height: height)
             tableView.tableFooterView = footer
         }
     }
@@ -227,7 +246,7 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         cell.textLabel?.text = device.name
         cell.imageView?.image = UIImage(systemName: "tv")
-        cell.detailTextLabel?.text = TvCredentials.token(for: device.id) == nil ? "Pair and play" : "Ready to play"
+        cell.detailTextLabel?.text = TvCredentials.token(for: device.id) == nil ? "Pair and play" : "Paired · Ready to play"
         cell.accessoryType = UserDefaults.standard.string(forKey: "NuvioLastTV") == device.id ? .checkmark : .none
         return cell
     }
@@ -235,6 +254,7 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
         tableView.deselectRow(at: indexPath, animated: true)
         guard !busy else { return }
         let device = devices[indexPath.row]
+        if let host = device.baseURL.host { AndroidTvRemote.shared.selectCompanion(host: host) }
         run { [self] in
             setStatus("Connecting to \(device.name)…")
             let info = try await request(device, path: "info")
@@ -313,6 +333,7 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
         setStatus("Starting playback on \(device.name)…")
         _ = try await request(device, path: "play", token: token, body: body)
         UserDefaults.standard.set(device.id, forKey: "NuvioLastTV")
+        if let host = device.baseURL.host { AndroidTvRemote.shared.selectCompanion(host: host) }
         for _ in 0..<45 {
             try await Task.sleep(nanoseconds: 1_000_000_000)
             let status = try await request(device, path: "play/\(id)", token: token)

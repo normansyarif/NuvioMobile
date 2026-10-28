@@ -91,3 +91,29 @@ out of commits and logs. Rebuild and reinstall after changing configuration.
 ## License
 
 [GNU General Public License v3.0](./LICENSE)
+
+
+### iPhone TV remote
+
+The **Remote** bottom-bar action opens the same drawer used by **Play on TV**.
+It provides a directional pad, OK, back, home, volume, standby/wake, keyboard,
+and **Launch Nuvio TV**. A green dot means the control connection is live;
+**Paired** alone means saved credentials, not an online TV.
+
+The remote uses Android TV Remote Service v2 on the local network. Pair it once
+with the six-character code displayed by the TV. This system pairing is separate
+from Nuvio's stream-sharing pairing. Private client keys and authenticated TV
+certificates stay in the iPhone Keychain. The TV app need not remain open for
+remote commands. Launch requires the companion-enabled TV build with the
+`nuvio-tv://home` intent filter. Wake requires the TV's network/remote service to
+remain reachable during standby; this cannot turn on a TV disconnected from power.
+
+Select a text field on the TV, then use the keyboard button and **Send to TV**.
+Text uses the remote service's current input-field counters and UTF-16 positions;
+apps with custom input controls may not support it. **Enter / Search** submits the
+field. No ADB connection is used by the iPhone app.
+
+Protocol interoperability references: Google's Polo pairing schema and
+[androidtvremote2](https://github.com/tronikos/androidtvremote2) (Apache-2.0).
+Run `swiftc iosApp/iosApp/AndroidTvProtocol.swift scripts/test-tv-remote.swift -o /tmp/nuvio-remote-tests && /tmp/nuvio-remote-tests`
+on macOS for packet, framing, parser-boundary, Unicode and RSA-input checks.

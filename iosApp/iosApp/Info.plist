@@ -52,6 +52,7 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_nuvio-tv._tcp</string>
+		<string>_androidtvremote2._tcp</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>

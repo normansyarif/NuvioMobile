@@ -324,6 +324,7 @@ enum NuvioAppTab: String, CaseIterable, Hashable {
     case home = "Home"
     case search = "Search"
     case library = "Library"
+    case remote = "Remote"
     case settings = "Settings"
 
     var fallbackTitle: String {
@@ -335,6 +336,7 @@ enum NuvioAppTab: String, CaseIterable, Hashable {
         case "home": return .home
         case "search": return .search
         case "library": return .library
+        case "remote": return .remote
         case "settings", "profile": return .settings
         default: return nil
         }
@@ -345,6 +347,7 @@ enum NuvioAppTab: String, CaseIterable, Hashable {
         case .home: return "NuvioTabHome"
         case .search: return "NuvioTabSearch"
         case .library: return "NuvioTabLibrary"
+        case .remote: return "NuvioTabRemote"
         case .settings: return "NuvioTabProfile"
         }
     }
@@ -354,6 +357,7 @@ enum NuvioAppTab: String, CaseIterable, Hashable {
         case .home: return "house.fill"
         case .search: return "magnifyingglass"
         case .library: return "rectangle.stack.fill"
+        case .remote: return "appletvremote.gen4.fill"
         case .settings: return "person.crop.circle.fill"
         }
     }
@@ -465,6 +469,7 @@ final class NativeTabIconStore: ObservableObject {
     )
 
     private var observer: NSObjectProtocol?
+    private var remoteObserver: AnyCancellable?
     private var profileAvatarURL: String?
     private var profileAvatarImage: UIImage?
     private var profileAvatarTask: URLSessionDataTask?
@@ -483,6 +488,9 @@ final class NativeTabIconStore: ObservableObject {
         ) { [weak self] _ in
             self?.reload()
         }
+        remoteObserver = AndroidTvRemote.shared.$state.removeDuplicates().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.revision += 1 }
+        }
         reload()
     }
 
@@ -494,6 +502,15 @@ final class NativeTabIconStore: ObservableObject {
     }
 
     func image(for tab: NuvioAppTab, selected: Bool) -> UIImage {
+        if tab == .remote, AndroidTvRemote.shared.connected {
+            return UIGraphicsImageRenderer(size: CGSize(width: 28, height: 28)).image { _ in
+                UIImage(systemName: tab.fallbackSystemImage)?
+                    .withTintColor(.secondaryLabel, renderingMode: .alwaysOriginal)
+                    .draw(in: CGRect(x: 2, y: 2, width: 23, height: 25))
+                UIColor.systemGreen.setFill()
+                UIBezierPath(ovalIn: CGRect(x: 20, y: 0, width: 7, height: 7)).fill()
+            }.withRenderingMode(.alwaysOriginal)
+        }
         guard tab == .settings else {
             return NuvioNativeTabIcon.image(for: tab)
         }
@@ -662,12 +679,14 @@ final class AppNavigationCoordinator: ObservableObject {
         case .home: return homeCoordinator
         case .search: return searchCoordinator
         case .library: return libraryCoordinator
+        case .remote: return homeCoordinator
         case .settings: return settingsCoordinator
         }
     }
 
     func activateTab(named tabName: String) {
         guard let tab = NuvioAppTab.from(kotlinName: tabName) else { return }
+        if tab == .remote { NuvioTvPresenter.shared.presentRemote(); return }
         if tab == .home || isAppReady {
             selectedTab = tab
         }
@@ -721,7 +740,7 @@ final class AppNavigationCoordinator: ObservableObject {
     }
 
     func tab(for target: TabNavigationCoordinator) -> NuvioAppTab? {
-        NuvioAppTab.allCases.first { coordinator(for: $0) === target }
+        NuvioAppTab.allCases.first { $0 != .remote && coordinator(for: $0) === target }
     }
 
     func push(
@@ -1332,6 +1351,10 @@ struct NativeNavContentView: View {
         Binding(
             get: { appCoordinator.selectedTab },
             set: { newTab in
+                if newTab == .remote {
+                    if appCoordinator.isAppReady { NuvioTvPresenter.shared.presentRemote() }
+                    return
+                }
                 if newTab == .settings &&
                     appCoordinator.profileTabInteraction.suppressesProfileSelection {
                     return
@@ -1347,16 +1370,24 @@ struct NativeNavContentView: View {
         )
     }
 
+    @ViewBuilder
+    private func tabContent(_ tab: NuvioAppTab) -> some View {
+        if tab == .remote { Color.clear }
+        else {
+            TabContentView(
+                tab: tab,
+                usesNativeTabBar: usesNativeTabBar,
+                usesTabletFloatingTabBar: usesTabletFloatingTabBar,
+                coordinator: appCoordinator.coordinator(for: tab),
+                appCoordinator: appCoordinator
+            )
+        }
+    }
+
     private var legacyTabs: some View {
         TabView(selection: tabSelection) {
             ForEach(NuvioAppTab.allCases, id: \.self) { tab in
-                TabContentView(
-                    tab: tab,
-                    usesNativeTabBar: usesNativeTabBar,
-                    usesTabletFloatingTabBar: usesTabletFloatingTabBar,
-                    coordinator: appCoordinator.coordinator(for: tab),
-                    appCoordinator: appCoordinator
-                )
+                tabContent(tab)
                 .tabItem {
                     Label {
                         Text(appCoordinator.title(for: tab))
@@ -1385,13 +1416,7 @@ struct NativeNavContentView: View {
             ForEach(NuvioAppTab.allCases, id: \.self) { tab in
                 if tab == .settings {
                     Tab(value: tab) {
-                        TabContentView(
-                            tab: tab,
-                            usesNativeTabBar: usesNativeTabBar,
-                            usesTabletFloatingTabBar: usesTabletFloatingTabBar,
-                            coordinator: appCoordinator.coordinator(for: tab),
-                            appCoordinator: appCoordinator
-                        )
+                        tabContent(tab)
                     } label: {
                         Label {
                             Text(appCoordinator.title(for: tab))
@@ -1422,13 +1447,7 @@ struct NativeNavContentView: View {
                     }
                 } else {
                     Tab(value: tab) {
-                        TabContentView(
-                            tab: tab,
-                            usesNativeTabBar: usesNativeTabBar,
-                            usesTabletFloatingTabBar: usesTabletFloatingTabBar,
-                            coordinator: appCoordinator.coordinator(for: tab),
-                            appCoordinator: appCoordinator
-                        )
+                        tabContent(tab)
                     } label: {
                         Label {
                             Text(appCoordinator.title(for: tab))

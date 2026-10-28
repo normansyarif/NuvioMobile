@@ -12,6 +12,7 @@ object TvCompanion {
     private var presenter: TvCompanionPresenter? = null
     val isAvailable: Boolean get() = presenter != null
     fun register(presenter: TvCompanionPresenter) { this.presenter = presenter }
+    fun remote() { presenter?.present("{}") }
     fun play(payloadJson: String) { presenter?.present(payloadJson) }
 }
 

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.SettingsRemote
+import com.nuvio.app.features.companion.TvCompanion
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -79,7 +81,8 @@ internal fun MainTabsDestination(
         val navBarHazeState = rememberHazeState()
         val navBarStyleSetting by remember { ThemeSettingsRepository.navBarStyle }.collectAsStateWithLifecycle()
         val navBarGlowEnabled by ThemeSettingsRepository.navBarGlowEnabled.collectAsStateWithLifecycle()
-        val floatingNavigationItems = listOf(
+        val floatingNavigationItems = buildList {
+            addAll(listOf(
             FloatingNavigationItem(
                 selected = selectedTab == AppScreenTab.Home,
                 onClick = { onTabSelected(AppScreenTab.Home) },
@@ -113,7 +116,14 @@ internal fun MainTabsDestination(
                     )
                 },
             ),
-        )
+            ))
+            if (TvCompanion.isAvailable) add(size - 1, FloatingNavigationItem(
+                selected = false,
+                onClick = { TvCompanion.remote() },
+                icon = Icons.Filled.SettingsRemote,
+                label = "Remote",
+            ))
+        }
 
         Scaffold(
             modifier = Modifier
@@ -141,6 +151,12 @@ internal fun MainTabsDestination(
                             onClick = { onTabSelected(AppScreenTab.Library) },
                             icon = Res.drawable.sidebar_library,
                             contentDescription = stringResource(Res.string.compose_nav_library),
+                        )
+                        if (TvCompanion.isAvailable) NavItem(
+                            selected = false,
+                            onClick = { TvCompanion.remote() },
+                            icon = Icons.Filled.SettingsRemote,
+                            contentDescription = "Remote",
                         )
                         NavItem(
                             selected = selectedTab == AppScreenTab.Settings,
