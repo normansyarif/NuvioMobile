@@ -135,8 +135,9 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
     }
     func power() {
         guard connected, supportsPower else { return }
-        // Explicit wake/sleep codes avoid accidentally toggling the TV twice.
-        if let isOn { key(isOn ? 223 : 224) } else { key(26) }
+        // Android TV Remote Service accepts POWER on this TV; SLEEP/WAKEUP
+        // keycodes can be ignored even though the power feature is advertised.
+        key(26)
     }
     func launchNuvio() {
         guard connected, supportsAppLaunch else { return }
