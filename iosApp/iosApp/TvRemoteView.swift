@@ -6,6 +6,8 @@ struct TvRemoteView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var keyboardPresented = false
     @State private var code = ""
+    @State private var volumePosition = 0.0
+    @State private var editingVolume = false
 
     var body: some View {
         VStack(spacing: 22) {
@@ -65,24 +67,15 @@ struct TvRemoteView: View {
                 .disabled(!remote.connected)
                 .opacity(remote.connected ? 1 : 0.4)
 
-            HStack(alignment: .center, spacing: 22) {
+            HStack(spacing: 32) {
                 roundButton("Back", symbol: "chevron.backward", size: 64) { remote.key(4) }
                 roundButton("Home", symbol: "house", size: 64) { remote.key(3) }
-                Spacer(minLength: 0)
-                VStack(spacing: 0) {
-                    Button { feedback(); remote.key(24) } label: {
-                        Image(systemName: "plus").font(.title3.weight(.medium)).frame(width: 64, height: 47)
-                    }.accessibilityLabel("Volume up")
-                    Image(systemName: "speaker.wave.2").font(.caption).foregroundStyle(.secondary).accessibilityHidden(true)
-                    Button { feedback(); remote.key(25) } label: {
-                        Image(systemName: "minus").font(.title3.weight(.medium)).frame(width: 64, height: 47)
-                    }.accessibilityLabel("Volume down")
-                }
-                .background(.white.opacity(0.075), in: Capsule())
-                .disabled(!remote.connected || !remote.supportsVolume)
             }
+            .frame(maxWidth: .infinity)
             .disabled(!remote.connected)
             .opacity(remote.connected ? 1 : 0.4)
+
+            volumeSlider
 
             Button { feedback(); remote.launchNuvio() } label: {
                 Label("Launch Nuvio TV", systemImage: "tv")
@@ -90,9 +83,6 @@ struct TvRemoteView: View {
                     .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 18))
             }
             .disabled(!remote.connected || !remote.supportsAppLaunch)
-            if let volume = remote.volume, remote.connected {
-                Text("Volume · \(volume)").font(.caption).foregroundStyle(.secondary)
-            }
             if remote.isOn == false {
                 Text("Wake works while your TV keeps its network connection in standby.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -105,12 +95,50 @@ struct TvRemoteView: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 24)
         .preferredColorScheme(.dark)
-        .onAppear { remote.resume() }
+        .onAppear { remote.resume(); syncVolume() }
+        .onChange(of: remote.volumeLevel) { _ in syncVolume() }
+        .onChange(of: remote.volumeMaximum) { _ in syncVolume() }
+        .onChange(of: remote.volumeTarget) { target in
+            if target == nil { syncVolume() }
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .active { remote.resume() }
             else if phase == .background { remote.suspend() }
         }
         .sheet(isPresented: $keyboardPresented) { TvKeyboardView(remote: remote) }
+    }
+    private var volumeSlider: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Volume").font(.caption.weight(.medium))
+                Spacer()
+                Text(remote.volumeFraction == nil ? "Unavailable" : "\(Int((volumePosition * 100).rounded()))%")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 12) {
+                Image(systemName: remote.volumeMuted || volumePosition == 0 ? "speaker.slash.fill" : "speaker.wave.1.fill")
+                    .font(.subheadline).accessibilityHidden(true)
+                Slider(value: Binding(get: { volumePosition }, set: { value in
+                    volumePosition = value
+                    remote.setVolume(value)
+                }), in: 0...1, onEditingChanged: { editing in
+                    editingVolume = editing
+                    if !editing { remote.setVolume(volumePosition, immediately: true) }
+                })
+                .tint(.white)
+                .accessibilityLabel("TV volume")
+                .accessibilityValue(remote.volumeMuted ? "Muted" : "\(Int((volumePosition * 100).rounded())) percent")
+                Image(systemName: "speaker.wave.3.fill").font(.subheadline).accessibilityHidden(true)
+            }
+        }
+        .padding(16)
+        .background(.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 20))
+        .disabled(!remote.connected || !remote.supportsVolume || remote.volumeFraction == nil)
+        .opacity(remote.connected && remote.volumeFraction != nil ? 1 : 0.4)
+    }
+    private func syncVolume() {
+        guard !editingVolume, remote.volumeTarget == nil else { return }
+        volumePosition = remote.volumeFraction ?? 0
     }
     private var pairing: some View {
         VStack(spacing: 14) {

@@ -100,7 +100,7 @@ jobs:
 
       - name: Check TV remote protocol
         run: |
-          swiftc iosApp/iosApp/AndroidTvProtocol.swift scripts/test-tv-remote.swift -o "${RUNNER_TEMP}/nuvio-remote-tests"
+          swiftc iosApp/iosApp/AndroidTvProtocol.swift iosApp/iosApp/TvCompanionBehavior.swift scripts/test-tv-remote.swift -o "${RUNNER_TEMP}/nuvio-remote-tests"
           "${RUNNER_TEMP}/nuvio-remote-tests"
 
       - name: Prepare iOS dependencies

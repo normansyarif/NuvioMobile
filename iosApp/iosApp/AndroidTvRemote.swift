@@ -25,7 +25,17 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
     @Published private(set) var fieldActive = false
     @Published private(set) var fieldText = ""
     @Published private(set) var fieldLabel = "TV keyboard"
-    @Published private(set) var volume: String?
+    @Published private(set) var volumeLevel: Int?
+    @Published private(set) var volumeMaximum: Int?
+    @Published private(set) var volumeMuted = false
+    @Published private(set) var volumeTarget: Double?
+    private var volumeTask: Task<Void, Never>?
+    private var volumeGeneration = 0
+    private var volumeRevision = 0
+    var volumeFraction: Double? {
+        guard let volumeLevel, let volumeMaximum, volumeMaximum > 0 else { return nil }
+        return Double(volumeLevel) / Double(volumeMaximum)
+    }
     @Published var pairingCode = ""
     private let browser = NetServiceBrowser()
     private var services = [NetService]()
@@ -148,6 +158,63 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
         guard text.utf8.count <= 16_384 else { message = "Please send a shorter text (up to 16 KB)."; return }
         transport?.send(TVWire.edit(text, ime: input.session, field: input.revision))
     }
+    func setVolume(_ fraction: Double, immediately: Bool = false) {
+        guard connected, supportsVolume, fraction.isFinite,
+              let maximum = volumeMaximum, maximum > 0, volumeLevel != nil else { return }
+        volumeTask?.cancel()
+        volumeGeneration += 1
+        let generation = volumeGeneration
+        volumeTarget = min(1, max(0, fraction))
+        var adjustment = TVVolumeAdjustment(fraction: fraction, maximum: maximum)
+        volumeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.volumeGeneration == generation { self.volumeTarget = nil; self.volumeTask = nil }
+            }
+            do {
+                // Coalesce slider dragging and accessibility adjustments. Send
+                // a small calibrated batch, then wait for settled TV feedback.
+                // Some TVs report multiple intermediate levels for one key.
+                if !immediately { try await Task.sleep(nanoseconds: 180_000_000) }
+                var stepSize: Int?
+                for _ in 0..<128 {
+                    try Task.checkCancellation()
+                    guard self.connected, self.volumeMaximum == maximum,
+                          let level = self.volumeLevel, let key = adjustment.nextKey(level: level) else { return }
+                    let distance = abs(adjustment.target - level)
+                    let count = stepSize.map { min(6, max(1, distance / $0)) } ?? 1
+                    var revision = self.volumeRevision
+                    for index in 0..<count {
+                        try Task.checkCancellation()
+                        self.key(key)
+                        if index + 1 < count { try await Task.sleep(nanoseconds: 60_000_000) }
+                    }
+                    var confirmed = false
+                    var changed = false
+                    var quietTicks = 0
+                    for _ in 0..<50 {
+                        try await Task.sleep(nanoseconds: 50_000_000)
+                        guard self.connected else { return }
+                        if self.volumeRevision != revision {
+                            revision = self.volumeRevision; quietTicks = 0
+                            changed = changed || self.volumeLevel != level
+                        } else if changed {
+                            quietTicks += 1
+                            if quietTicks >= 6 { confirmed = true; break }
+                        }
+                    }
+                    if confirmed, let current = self.volumeLevel {
+                        stepSize = max(1, abs(current - level) / count)
+                    }
+                    guard confirmed else {
+                        self.message = "The TV didn’t confirm a volume change. Try the slider again."
+                        return
+                    }
+                }
+            } catch is CancellationError { }
+            catch { self.message = error.localizedDescription }
+        }
+    }
     private func makeTransport() -> TVRemoteTransport {
         let transport = TVRemoteTransport()
         self.transport = transport
@@ -200,8 +267,12 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
                     message = isOn == true ? "Connected · Paired" : "Connected · TV in standby"
                     if let selected { UserDefaults.standard.set(try JSONEncoder().encode(selected), forKey: "NuvioRemoteLastDevice") }
                 case 50:
-                    let max = TVWire.integer(body, 6), level = TVWire.integer(body, 7)
-                    volume = TVWire.integer(body, 8) == 1 ? "Muted" : (max > 0 ? "\(level) / \(max)" : nil)
+                    let maximum = TVWire.integer(body, 6), level = TVWire.integer(body, 7)
+                    if maximum > 0, maximum <= 65_536 {
+                        volumeMaximum = Int(maximum); volumeLevel = Int(min(level, maximum))
+                    } else { volumeMaximum = nil; volumeLevel = nil }
+                    volumeMuted = TVWire.integer(body, 8) == 1
+                    volumeRevision += 1
                 default: break
                 }
             }
@@ -215,8 +286,10 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
     }
     private func cancelConnection() {
         deadline?.cancel(); deadline = nil
+        volumeGeneration += 1; volumeTask?.cancel(); volumeTask = nil; volumeTarget = nil
+        volumeLevel = nil; volumeMaximum = nil; volumeMuted = false; volumeRevision = 0
         transport?.onError = nil; transport?.onFrame = nil; transport?.close(); transport = nil
-        fieldActive = false; fieldText = ""; isOn = nil; volume = nil; features = 0; input = TVInputState()
+        fieldActive = false; fieldText = ""; isOn = nil; features = 0; input = TVInputState()
     }
     private func fail(_ text: String) { cancelConnection(); state = .disconnected; message = text }
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {

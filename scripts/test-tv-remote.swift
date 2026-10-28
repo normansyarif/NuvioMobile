@@ -1,4 +1,4 @@
-// Run: swiftc iosApp/iosApp/AndroidTvProtocol.swift scripts/test-tv-remote.swift -o /tmp/nuvio-remote-tests && /tmp/nuvio-remote-tests
+// Run: swiftc iosApp/iosApp/AndroidTvProtocol.swift iosApp/iosApp/TvCompanionBehavior.swift scripts/test-tv-remote.swift -o /tmp/nuvio-remote-tests && /tmp/nuvio-remote-tests
 import Foundation
 import Security
 @main struct RemoteProtocolTests {
@@ -45,6 +45,37 @@ import Security
         try check(input.session == 3 && input.revision == 14 && input.text == "edited 📺", "Field revision updates without changing session")
         try input.receive(number: 20, body: TVWire.fields(TVWire.bytes(1, TVWire.int(1, 4))))
         try check(!input.active && input.text.isEmpty, "App switch clears active input")
+        func claim(_ policy: inout TVAutomaticPlayback, playback: Bool = true, devices: Int = 1,
+                   services: Int = 1, pending: Int = 0, more: Bool = false, paired: Bool = true,
+                   busy: Bool = false, active: Bool = true) -> Bool {
+            policy.claim(hasPlayback: playback, deviceCount: devices, serviceCount: services,
+                         unresolvedCount: pending, moreComing: more, paired: paired, busy: busy, active: active)
+        }
+        var automatic = TVAutomaticPlayback()
+        try check(!claim(&automatic, pending: 1), "Wait for pending Bonjour resolutions")
+        try check(!claim(&automatic, more: true), "Wait for the Bonjour discovery batch")
+        try check(!claim(&automatic, devices: 2, services: 2), "Multiple available TVs require selection")
+        try check(!claim(&automatic, services: 2), "An unresolved or incompatible second TV cannot trigger automatic playback")
+        try check(!claim(&automatic, paired: false), "Unpaired TV requires pairing")
+        try check(!claim(&automatic, playback: false), "Remote-only drawer never sends a stream")
+        try check(!claim(&automatic, busy: true), "Do not race another operation")
+        try check(!claim(&automatic, active: false), "No automatic playback after dismissal or backgrounding")
+        try check(claim(&automatic), "One resolved paired TV starts automatically")
+        try check(!claim(&automatic), "Refresh and discovery updates cannot replay the stream")
+        var manual = TVAutomaticPlayback(); manual.suppress()
+        try check(!claim(&manual), "Manual selection cancels pending automatic playback")
+        var volumeUp = TVVolumeAdjustment(fraction: 0.13, maximum: 100)
+        try check(volumeUp.nextKey(level: 9) == 24, "Slider increases real TV volume")
+        try check(volumeUp.nextKey(level: 11) == 24, "Follow confirmed two-unit hardware steps")
+        try check(volumeUp.nextKey(level: 13) == nil, "Stop when target reached")
+        var coarse = TVVolumeAdjustment(fraction: 0.13, maximum: 100)
+        try check(coarse.nextKey(level: 12) == 24 && coarse.nextKey(level: 14) == nil, "Never oscillate around an unreachable volume")
+        var overshoot = TVVolumeAdjustment(fraction: 0.13, maximum: 100)
+        try check(overshoot.nextKey(level: 12) == 24 && overshoot.nextKey(level: 16) == 25 && overshoot.nextKey(level: 12) == nil, "Restore the closer level after a coarse overshoot")
+        var quiet = TVVolumeAdjustment(fraction: 0, maximum: 15)
+        try check(quiet.nextKey(level: 2) == 25 && quiet.nextKey(level: 0) == nil, "Slider reaches silence")
+        try check(TVVolumeAdjustment(fraction: 2, maximum: 15).target == 15, "Clamp slider to the reported TV range")
+        try check(TVVolumeAdjustment(fraction: .nan, maximum: 15).target == 0, "Reject invalid slider fractions safely")
         let attributes: [String: Any] = [kSecAttrKeyType as String: kSecAttrKeyTypeRSA, kSecAttrKeySizeInBits as String: 2048]
         let key = SecKeyCreateRandomKey(attributes as CFDictionary, nil)!
         try check(try TVDER.rsaParts(SecKeyCopyPublicKey(key)!).count == 259, "RSA hash inputs contain unsigned modulus and exponent")

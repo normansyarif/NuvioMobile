@@ -96,7 +96,7 @@ out of commits and logs. Rebuild and reinstall after changing configuration.
 ### iPhone TV remote
 
 The **Remote** bottom-bar action opens the same drawer used by **Play on TV**.
-It provides a directional pad, OK, back, home, volume, standby/wake, keyboard,
+It provides a directional pad, OK, back, home, a horizontal volume slider, standby/wake, keyboard,
 and **Launch Nuvio TV**. A green dot means the control connection is live;
 **Paired** alone means saved credentials, not an online TV.
 
@@ -117,3 +117,15 @@ Protocol interoperability references: Google's Polo pairing schema and
 [androidtvremote2](https://github.com/tronikos/androidtvremote2) (Apache-2.0).
 Run `swiftc iosApp/iosApp/AndroidTvProtocol.swift scripts/test-tv-remote.swift -o /tmp/nuvio-remote-tests && /tmp/nuvio-remote-tests`
 on macOS for packet, framing, parser-boundary, Unicode and RSA-input checks.
+
+
+In iOS 0.6.6 (build 151), **Play on TV** automatically sends the selected stream
+when discovery settles on exactly one available, already-paired Nuvio TV. Multiple
+TVs still require a choice; unpaired TVs still require the on-TV pairing code.
+Each drawer can make only one automatic attempt, so discovery updates and Refresh
+do not replay a stream. The **Remote** tab never sends media by itself.
+
+The volume slider uses the TV's reported range and follows confirmed volume
+changes, including adjustments from the physical remote. Changes are coalesced
+while dragging, and small calibrated key batches stop at the nearest supported
+hardware level. The slider is unavailable until the TV reports its volume range.

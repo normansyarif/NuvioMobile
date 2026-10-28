@@ -98,6 +98,12 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
     private var devices = [Device]()
     private var operation: Task<Void, Never>?
     private var discoveryTimeout: DispatchWorkItem?
+    private var automaticPlaybackWork: DispatchWorkItem?
+    private var automaticPlayback = TVAutomaticPlayback()
+    private var unresolvedServices = Set<ObjectIdentifier>()
+    private var moreServicesComing = false
+    private var discoveryFailed = false
+    private var closed = false
     private var busy = false
     private var pairingChallenges: [String: (id: String, expires: Date, attempts: Int)] = [:]
     private let statusLabel = UILabel()
@@ -153,6 +159,8 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
 
     @objc private func close() { stop(); dismiss(animated: true) }
     private func stop() {
+        closed = true
+        automaticPlayback.suppress(); automaticPlaybackWork?.cancel()
         operation?.cancel()
         browser.stop()
         services.forEach { $0.stop() }
@@ -162,6 +170,8 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
 
     @objc private func search() {
         guard !busy else { return }
+        automaticPlaybackWork?.cancel()
+        unresolvedServices.removeAll(); moreServicesComing = false; discoveryFailed = false
         AndroidTvRemote.shared.refresh()
         browser.stop()
         services.forEach { $0.stop() }
@@ -205,19 +215,34 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
 
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
         services.append(service)
+        unresolvedServices.insert(ObjectIdentifier(service))
+        moreServicesComing = moreComing
+        scheduleAutomaticPlayback()
         service.delegate = self
         service.resolve(withTimeout: 8)
     }
     func netServiceBrowser(_ browser: NetServiceBrowser, didRemove service: NetService, moreComing: Bool) {
         services.removeAll { $0 == service }
+        unresolvedServices.remove(ObjectIdentifier(service))
+        moreServicesComing = moreComing
         service.stop()
         devices.removeAll { $0.name == service.name }
         tableView.reloadData()
+        scheduleAutomaticPlayback()
     }
     func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber]) {
+        discoveryFailed = true; automaticPlaybackWork?.cancel()
         setStatus("TV discovery is unavailable. Allow Local Network access for Nuvio in iPhone Settings, then tap Refresh.")
     }
+    func netService(_ sender: NetService, didNotResolve errorDict: [String: NSNumber]) {
+        unresolvedServices.remove(ObjectIdentifier(sender))
+        discoveryFailed = true
+        automaticPlaybackWork?.cancel()
+    }
     func netServiceDidResolveAddress(_ sender: NetService) {
+        guard services.contains(sender), !closed else { return }
+        unresolvedServices.remove(ObjectIdentifier(sender))
+        defer { scheduleAutomaticPlayback() }
         guard let host = sender.hostName, sender.port > 0,
               let txt = sender.txtRecordData() else { return }
         let attributes = NetService.dictionary(fromTXTRecord: txt)
@@ -237,7 +262,7 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
             return $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
         tableView.reloadData()
-        if !busy { setStatus("Choose a TV to start playing. Your iPhone can be locked once playback starts.") }
+        if !busy, !automaticPlayback.attempted { setStatus("Choose a TV to start playing. Your iPhone can be locked once playback starts.") }
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { devices.count }
@@ -250,10 +275,34 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
         cell.accessoryType = UserDefaults.standard.string(forKey: "NuvioLastTV") == device.id ? .checkmark : .none
         return cell
     }
+    private func scheduleAutomaticPlayback() {
+        automaticPlaybackWork?.cancel()
+        guard hasPlayback, !automaticPlayback.attempted, !closed, !discoveryFailed else { return }
+        // Bonjour arrives incrementally. Let discovery settle and all known
+        // services resolve before deciding there is exactly one available TV.
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.discoveryFailed else { return }
+            let device = self.devices.first
+            let paired = device.flatMap { TvCredentials.token(for: $0.id) } != nil
+            guard self.automaticPlayback.claim(
+                hasPlayback: self.hasPlayback, deviceCount: self.devices.count,
+                serviceCount: self.services.count, unresolvedCount: self.unresolvedServices.count,
+                moreComing: self.moreServicesComing, paired: paired, busy: self.busy,
+                active: !self.closed && UIApplication.shared.applicationState == .active
+            ), let device else { return }
+            self.startPlayback(on: device)
+        }
+        automaticPlaybackWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
+    }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard !busy else { return }
-        let device = devices[indexPath.row]
+        startPlayback(on: devices[indexPath.row])
+    }
+    private func startPlayback(on device: Device) {
+        guard !busy, !closed else { return }
+        automaticPlayback.suppress(); automaticPlaybackWork?.cancel()
         if let host = device.baseURL.host { AndroidTvRemote.shared.selectCompanion(host: host) }
         run { [self] in
             setStatus("Connecting to \(device.name)…")
