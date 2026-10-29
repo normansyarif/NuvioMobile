@@ -106,6 +106,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import com.nuvio.app.features.home.components.continueWatchingHeroViewportReserveHeight
 import com.nuvio.app.features.home.components.homeSectionHorizontalPaddingForWidth
@@ -644,6 +645,9 @@ fun HomeScreen(
         cwCacheGeneration,
     ) { active ->
         if (!active || preparedProjectionGeneration != cachedProjectionGeneration) return@ScreenActivityEffect
+        // Counts and public content IDs only: useful for diagnosing device-only
+        // cache stalls without logging account credentials or stream URLs.
+        println("[NuvioHomeNextUp] source=$effectiveWatchProgressSource ready=${watchProgressUiState.hasLoadedRemoteProgress} seeds=${completedSeriesCandidates.size}")
         if (
             !isHomeNextUpSeedSourceLoaded(
                 providerOwnsCompletedHistory = progressProviderOwnsCompletedHistory,
@@ -729,17 +733,19 @@ fun HomeScreen(
                     launch {
                         val attempt = try {
                             semaphore.withPermit {
-                                resolveHomeNextUpCandidate(
-                                    completedEntry = completedEntry,
-                                    watchProgressEntries = watchProgressUiState.entries,
-                                    watchedItems = nextUpWatchedItems,
-                                    cachedFallbackItem = cachedNextUpItems[completedEntry.content.id]?.second,
-                                    todayIsoDate = todayIsoDate,
-                                    preferFurthestEpisode = continueWatchingPreferences.upNextFromFurthestEpisode,
-                                    showUnairedNextUp = continueWatchingPreferences.showUnairedNextUp,
-                                    dismissedNextUpKeys = continueWatchingPreferences.dismissedNextUpKeys,
-                                    providerOwnsCompletedHistory = progressProviderOwnsCompletedHistory,
-                                )
+                                withTimeoutOrNull(NEXT_UP_CANDIDATE_TIMEOUT_MS) {
+                                    resolveHomeNextUpCandidate(
+                                        completedEntry = completedEntry,
+                                        watchProgressEntries = watchProgressUiState.entries,
+                                        watchedItems = nextUpWatchedItems,
+                                        cachedFallbackItem = cachedNextUpItems[completedEntry.content.id]?.second,
+                                        todayIsoDate = todayIsoDate,
+                                        preferFurthestEpisode = continueWatchingPreferences.upNextFromFurthestEpisode,
+                                        showUnairedNextUp = continueWatchingPreferences.showUnairedNextUp,
+                                        dismissedNextUpKeys = continueWatchingPreferences.dismissedNextUpKeys,
+                                        providerOwnsCompletedHistory = progressProviderOwnsCompletedHistory,
+                                    )
+                                } ?: HomeNextUpResolutionAttempt.transientFailure()
                             }
                         } catch (error: Throwable) {
                             if (error is CancellationException) throw error
@@ -756,6 +762,7 @@ fun HomeScreen(
 
                 repeat(candidates.size) {
                     val resolution = results.receive()
+                    println("[NuvioHomeNextUp] id=${resolution.candidate.content.id} conclusive=${resolution.attempt.isConclusive} video=${resolution.attempt.resolved?.second?.second?.videoId}")
                     if (resolution.attempt.isConclusive) {
                         processedFreshContentIds += resolution.candidate.content.id
                     }
@@ -854,7 +861,9 @@ fun HomeScreen(
             if (
                 transientContentIds.isNotEmpty() &&
                 nextUpResolutionRetryAttempt < MAX_NEXT_UP_RESOLUTION_RETRIES &&
-                networkStatusUiState.condition == NetworkCondition.Online
+                // The Nuvio backend can be unavailable while Trakt and an
+                // add-on still work. Do not permanently strand next-up cards.
+                networkStatusUiState.condition != NetworkCondition.NoInternet
             ) {
                 val retryDelayMs = NEXT_UP_RESOLUTION_RETRY_BASE_DELAY_MS *
                     (1L shl nextUpResolutionRetryAttempt)
@@ -1267,6 +1276,7 @@ private const val HOME_UPCOMING_SECTION_KEY = "home_upcoming"
 internal const val HomeContinueWatchingMaxRecentProgressItems = 300
 internal const val HomeNextUpInitialResolutionLimit = 32
 private const val NEXT_UP_RESOLUTION_CONCURRENCY = 4
+private const val NEXT_UP_CANDIDATE_TIMEOUT_MS = 12_000L
 private const val MAX_NEXT_UP_RESOLUTION_RETRIES = 3
 private const val NEXT_UP_RESOLUTION_RETRY_BASE_DELAY_MS = 1_500L
 

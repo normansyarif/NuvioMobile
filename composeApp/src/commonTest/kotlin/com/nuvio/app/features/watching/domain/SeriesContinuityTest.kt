@@ -6,6 +6,26 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 class SeriesContinuityTest {
+    @Test
+    fun parks_season_two_finale_advances_to_season_three_premiere() {
+        val parks = WatchingContentRef(type = "series", id = "tt1266020")
+        val action = decideSeriesPrimaryAction(
+            content = parks,
+            episodes = listOf(
+                WatchingReleasedEpisode(videoId = "tt1266020:2:24", seasonNumber = 2, episodeNumber = 24, title = "Freddy Spaghetti", releasedDate = "2010-05-21"),
+                WatchingReleasedEpisode(videoId = "tt1266020:3:1", seasonNumber = 3, episodeNumber = 1, title = "Go Big or Go Home", releasedDate = "2011-01-21"),
+            ),
+            progressRecords = listOf(
+                WatchingProgressRecord(content = parks, videoId = "tt1266020:2:24", seasonNumber = 2, episodeNumber = 24, lastUpdatedEpochMs = 1793309160000L, isCompleted = true),
+            ),
+            watchedRecords = emptyList(),
+            todayIsoDate = "2026-10-30",
+        )
+        assertNotNull(action)
+        assertEquals("tt1266020:3:1", action.videoId)
+        assertNull(action.resumePositionMs)
+    }
+
     private val show = WatchingContentRef(type = "series", id = "show")
     private val episodes = listOf(
         WatchingReleasedEpisode(videoId = "ep1", seasonNumber = 1, episodeNumber = 1, title = "Episode 1", releasedDate = "2026-03-01"),

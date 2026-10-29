@@ -373,7 +373,9 @@ object TraktProgressRepository {
             entries = remoteEntriesSnapshot,
             isLoading = true,
             errorMessage = null,
-            hasLoadedRemoteProgress = false,
+            // Existing completed-history seeds remain valid during a refresh.
+            // Clearing readiness here cancels Home's in-flight next-up work on
+            // every activity poll, even though we retain the old snapshot.
         )
 
         val completedEntries = runCatching {
@@ -396,7 +398,6 @@ object TraktProgressRepository {
             publishProgressState(
                 isLoading = false,
                 errorMessage = null,
-                hasLoadedRemoteProgress = false,
             )
             return
         }
