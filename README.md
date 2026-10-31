@@ -20,12 +20,19 @@
 
 ## Play on TV
 
-With companion-enabled Nuvio TV open on the same Wi-Fi, hold a stream on iOS and
-choose **Play on TV**. Allow Local Network access, select your TV, and enter the
-code shown on it. Pairing is remembered for future playback. The TV plays the
-video directly; the phone can lock after playback starts. This first version
-supports direct HTTP/HTTPS streams and debrid links resolved to HTTP/HTTPS.
-Both apps need builds containing the companion feature.
+On iOS, tap the TV button at the right of a stream, or hold the stream and choose
+**Play on TV**. Keep both devices on the same Wi-Fi and allow Local Network access.
+If Nuvio TV is already available, one paired TV starts playing automatically.
+Otherwise, the app uses your saved Android TV Remote pairing to launch Nuvio TV
+and waits for its companion service to become ready. Pair the remote once in the
+Remote screen to enable this launch shortcut. A TV in standby or an unreachable
+TV shows an error; it is not automatically powered on.
+
+The first companion connection requires selecting your TV and entering the code
+shown on it. Multiple available TVs require selection. Pairings are remembered.
+The TV plays directly, so the phone can lock once playback starts. Supports direct
+HTTP/HTTPS streams and debrid links resolved to HTTP/HTTPS. Both apps need builds
+containing the companion feature.
 
 ## Build from source
 
@@ -115,7 +122,7 @@ field. No ADB connection is used by the iPhone app.
 
 Protocol interoperability references: Google's Polo pairing schema and
 [androidtvremote2](https://github.com/tronikos/androidtvremote2) (Apache-2.0).
-Run `swiftc iosApp/iosApp/AndroidTvProtocol.swift scripts/test-tv-remote.swift -o /tmp/nuvio-remote-tests && /tmp/nuvio-remote-tests`
+Run `swiftc iosApp/iosApp/AndroidTvProtocol.swift iosApp/iosApp/TvCompanionBehavior.swift scripts/test-tv-remote.swift -o /tmp/nuvio-remote-tests && /tmp/nuvio-remote-tests`
 on macOS for packet, framing, parser-boundary, Unicode and RSA-input checks.
 
 

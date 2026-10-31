@@ -228,203 +228,207 @@ fun StreamsScreen(
         )
     }
 
+    val playOnTv: (StreamItem) -> Unit = { selected ->
+        downloadScope.launch {
+            val stream = if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(selected)) {
+                NuvioToastController.show(org.jetbrains.compose.resources.getString(Res.string.streams_tv_resolving))
+                when (val result = DirectDebridPlaybackResolver.resolveToPlayableStream(selected, seasonNumber, episodeNumber)) {
+                    is DirectDebridPlayableResult.Success -> result.stream
+                    else -> {
+                        result.toastMessage()?.let { NuvioToastController.show(it) }
+                        return@launch
+                    }
+                }
+            } else selected
+            val url = stream.playableDirectUrl
+            if (url == null || !(url.startsWith("https://", true) || url.startsWith("http://", true))) {
+                NuvioToastController.show(org.jetbrains.compose.resources.getString(Res.string.streams_tv_unsupported))
+            } else {
+                TvCompanion.play(tvPlaybackPayload(
+                    stream, title, parentMetaId, parentMetaType, videoId,
+                    seasonNumber, episodeNumber, episodeTitle, poster, background, logo
+                ))
+            }
+        }
+    }
+
     if (showLoadingScreen) return
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
-        val isTabletLayout = maxWidth >= 768.dp
-
-        if (isTabletLayout) {
-            TabletStreamsLayout(
-                isEpisode = isEpisode,
-                title = title,
-                logo = logo,
-                poster = poster,
-                background = background,
-                episodeThumbnail = episodeThumbnail,
-                seasonNumber = seasonNumber,
-                episodeNumber = episodeNumber,
-                episodeTitle = episodeTitle,
-                uiState = uiState,
-                debridEnabled = debridSettings.canResolvePlayableLinks,
-                appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
-                resumePositionMs = effectiveResumePositionMs,
-                resumeProgressFraction = effectiveResumeProgressFraction,
-                onStreamSelected = { stream, positionMs, progressFraction ->
-                    onStreamSelected(stream, positionMs, progressFraction)
-                },
-                onStreamLongPress = { stream -> streamActionsTarget = stream },
-                onRefresh = reloadStreams,
-            )
-        } else {
-            MobileStreamsLayout(
-                isEpisode = isEpisode,
-                backgroundMode = streamDisplaySettings.backgroundMode,
-                title = title,
-                logo = logo,
-                heroArtwork = heroArtwork,
-                seasonNumber = seasonNumber,
-                episodeNumber = episodeNumber,
-                episodeTitle = episodeTitle,
-                blurEpisodeThumbnail = blurEpisodeThumbnail,
-                uiState = uiState,
-                debridEnabled = debridSettings.canResolvePlayableLinks,
-                appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
-                resumePositionMs = effectiveResumePositionMs,
-                resumeProgressFraction = effectiveResumeProgressFraction,
-                onStreamSelected = { stream, positionMs, progressFraction ->
-                    onStreamSelected(stream, positionMs, progressFraction)
-                },
-                onStreamLongPress = { stream -> streamActionsTarget = stream },
-                onRefresh = reloadStreams,
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(LocalVerticalBarPadding.current)
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-                .padding(start = 12.dp, top = if (useNativeNavigation) 52.dp else 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+    CompositionLocalProvider(LocalPlayOnTv provides if (TvCompanion.isAvailable) playOnTv else null) {
+        BoxWithConstraints(
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
         ) {
-            NuvioBackButton(
-                onClick = onBack,
+            val isTabletLayout = maxWidth >= 768.dp
+
+            if (isTabletLayout) {
+                TabletStreamsLayout(
+                    isEpisode = isEpisode,
+                    title = title,
+                    logo = logo,
+                    poster = poster,
+                    background = background,
+                    episodeThumbnail = episodeThumbnail,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    episodeTitle = episodeTitle,
+                    uiState = uiState,
+                    debridEnabled = debridSettings.canResolvePlayableLinks,
+                    appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
+                    resumePositionMs = effectiveResumePositionMs,
+                    resumeProgressFraction = effectiveResumeProgressFraction,
+                    onStreamSelected = { stream, positionMs, progressFraction ->
+                        onStreamSelected(stream, positionMs, progressFraction)
+                    },
+                    onStreamLongPress = { stream -> streamActionsTarget = stream },
+                    onRefresh = reloadStreams,
+                )
+            } else {
+                MobileStreamsLayout(
+                    isEpisode = isEpisode,
+                    backgroundMode = streamDisplaySettings.backgroundMode,
+                    title = title,
+                    logo = logo,
+                    heroArtwork = heroArtwork,
+                    seasonNumber = seasonNumber,
+                    episodeNumber = episodeNumber,
+                    episodeTitle = episodeTitle,
+                    blurEpisodeThumbnail = blurEpisodeThumbnail,
+                    uiState = uiState,
+                    debridEnabled = debridSettings.canResolvePlayableLinks,
+                    appendInstantServiceToDefaultName = debridSettings.canResolvePlayableLinks && !debridSettings.hasCustomStreamFormatting,
+                    resumePositionMs = effectiveResumePositionMs,
+                    resumeProgressFraction = effectiveResumeProgressFraction,
+                    onStreamSelected = { stream, positionMs, progressFraction ->
+                        onStreamSelected(stream, positionMs, progressFraction)
+                    },
+                    onStreamLongPress = { stream -> streamActionsTarget = stream },
+                    onRefresh = reloadStreams,
+                )
+            }
+
+            Row(
                 modifier = Modifier
-                    .size(40.dp),
-                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
-                contentColor = MaterialTheme.colorScheme.onBackground,
+                    .align(Alignment.TopStart)
+                    .padding(LocalVerticalBarPadding.current)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                    .padding(start = 12.dp, top = if (useNativeNavigation) 52.dp else 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                NuvioBackButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .size(40.dp),
+                    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
+                    contentColor = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+
+
+            StreamActionsSheet(
+                stream = streamActionsTarget,
+                externalPlayerEnabled = playerSettings.externalPlayerEnabled,
+                onDismiss = { streamActionsTarget = null },
+                onPlayOnTv = playOnTv,
+                onCopyLink = { stream ->
+                    val directUrl = stream.playableDirectUrl ?: stream.externalOpenUrl
+                    if (!directUrl.isNullOrBlank()) {
+                        clipboardManager.setText(AnnotatedString(directUrl))
+                        NuvioToastController.show(streamLinkCopiedText)
+                    } else if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
+                        downloadScope.launch {
+                            val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
+                                stream = stream,
+                                season = seasonNumber,
+                                episode = episodeNumber,
+                            )
+                            when (resolved) {
+                                is DirectDebridPlayableResult.Success -> {
+                                    val resolvedUrl = resolved.stream.playableDirectUrl
+                                    if (!resolvedUrl.isNullOrBlank()) {
+                                        clipboardManager.setText(AnnotatedString(resolvedUrl))
+                                        NuvioToastController.show(streamLinkCopiedText)
+                                    } else {
+                                        NuvioToastController.show(noDirectStreamLinkText)
+                                    }
+                                }
+                                else -> {
+                                    val message = resolved.toastMessage()
+                                    if (message != null) {
+                                        NuvioToastController.show(message)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        NuvioToastController.show(noDirectStreamLinkText)
+                    }
+                },
+                onDownload = { stream ->
+                    if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
+                        downloadScope.launch {
+                            val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
+                                stream = stream,
+                                season = seasonNumber,
+                                episode = episodeNumber,
+                            )
+                            when (resolved) {
+                                is DirectDebridPlayableResult.Success -> {
+                                    val result = DownloadsRepository.enqueueFromStream(
+                                        contentType = type,
+                                        videoId = videoId,
+                                        parentMetaId = parentMetaId,
+                                        parentMetaType = parentMetaType,
+                                        title = title,
+                                        logo = logo,
+                                        poster = poster,
+                                        background = background,
+                                        seasonNumber = seasonNumber,
+                                        episodeNumber = episodeNumber,
+                                        episodeTitle = episodeTitle,
+                                        episodeThumbnail = episodeThumbnail,
+                                        stream = resolved.stream,
+                                    )
+                                    NuvioToastController.show(result.toastMessage())
+                                }
+                                else -> {
+                                    val message = resolved.toastMessage()
+                                    if (message != null) {
+                                        NuvioToastController.show(message)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        val result = DownloadsRepository.enqueueFromStream(
+                            contentType = type,
+                            videoId = videoId,
+                            parentMetaId = parentMetaId,
+                            parentMetaType = parentMetaType,
+                            title = title,
+                            logo = logo,
+                            poster = poster,
+                            background = background,
+                            seasonNumber = seasonNumber,
+                            episodeNumber = episodeNumber,
+                            episodeTitle = episodeTitle,
+                            episodeThumbnail = episodeThumbnail,
+                            stream = stream,
+                        )
+                        NuvioToastController.show(result.toastMessage())
+                    }
+                },
+                onOpen = { stream, openExternally ->
+                    onStreamActionOpen(
+                        stream,
+                        openExternally,
+                        effectiveResumePositionMs,
+                        effectiveResumeProgressFraction,
+                    )
+                },
             )
         }
-
-
-        StreamActionsSheet(
-            stream = streamActionsTarget,
-            externalPlayerEnabled = playerSettings.externalPlayerEnabled,
-            onDismiss = { streamActionsTarget = null },
-            onPlayOnTv = { selected ->
-                downloadScope.launch {
-                    val stream = if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(selected)) {
-                        NuvioToastController.show(org.jetbrains.compose.resources.getString(Res.string.streams_tv_resolving))
-                        when (val result = DirectDebridPlaybackResolver.resolveToPlayableStream(selected, seasonNumber, episodeNumber)) {
-                            is DirectDebridPlayableResult.Success -> result.stream
-                            else -> {
-                                result.toastMessage()?.let { NuvioToastController.show(it) }
-                                return@launch
-                            }
-                        }
-                    } else selected
-                    val url = stream.playableDirectUrl
-                    if (url == null || !(url.startsWith("https://", true) || url.startsWith("http://", true))) {
-                        NuvioToastController.show(org.jetbrains.compose.resources.getString(Res.string.streams_tv_unsupported))
-                    } else {
-                        TvCompanion.play(tvPlaybackPayload(
-                            stream, title, parentMetaId, parentMetaType, videoId,
-                            seasonNumber, episodeNumber, episodeTitle, poster, background, logo
-                        ))
-                    }
-                }
-            },
-            onCopyLink = { stream ->
-                val directUrl = stream.playableDirectUrl ?: stream.externalOpenUrl
-                if (!directUrl.isNullOrBlank()) {
-                    clipboardManager.setText(AnnotatedString(directUrl))
-                    NuvioToastController.show(streamLinkCopiedText)
-                } else if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
-                    downloadScope.launch {
-                        val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
-                            stream = stream,
-                            season = seasonNumber,
-                            episode = episodeNumber,
-                        )
-                        when (resolved) {
-                            is DirectDebridPlayableResult.Success -> {
-                                val resolvedUrl = resolved.stream.playableDirectUrl
-                                if (!resolvedUrl.isNullOrBlank()) {
-                                    clipboardManager.setText(AnnotatedString(resolvedUrl))
-                                    NuvioToastController.show(streamLinkCopiedText)
-                                } else {
-                                    NuvioToastController.show(noDirectStreamLinkText)
-                                }
-                            }
-                            else -> {
-                                val message = resolved.toastMessage()
-                                if (message != null) {
-                                    NuvioToastController.show(message)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    NuvioToastController.show(noDirectStreamLinkText)
-                }
-            },
-            onDownload = { stream ->
-                if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
-                    downloadScope.launch {
-                        val resolved = DirectDebridPlaybackResolver.resolveToPlayableStream(
-                            stream = stream,
-                            season = seasonNumber,
-                            episode = episodeNumber,
-                        )
-                        when (resolved) {
-                            is DirectDebridPlayableResult.Success -> {
-                                val result = DownloadsRepository.enqueueFromStream(
-                                    contentType = type,
-                                    videoId = videoId,
-                                    parentMetaId = parentMetaId,
-                                    parentMetaType = parentMetaType,
-                                    title = title,
-                                    logo = logo,
-                                    poster = poster,
-                                    background = background,
-                                    seasonNumber = seasonNumber,
-                                    episodeNumber = episodeNumber,
-                                    episodeTitle = episodeTitle,
-                                    episodeThumbnail = episodeThumbnail,
-                                    stream = resolved.stream,
-                                )
-                                NuvioToastController.show(result.toastMessage())
-                            }
-                            else -> {
-                                val message = resolved.toastMessage()
-                                if (message != null) {
-                                    NuvioToastController.show(message)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    val result = DownloadsRepository.enqueueFromStream(
-                        contentType = type,
-                        videoId = videoId,
-                        parentMetaId = parentMetaId,
-                        parentMetaType = parentMetaType,
-                        title = title,
-                        logo = logo,
-                        poster = poster,
-                        background = background,
-                        seasonNumber = seasonNumber,
-                        episodeNumber = episodeNumber,
-                        episodeTitle = episodeTitle,
-                        episodeThumbnail = episodeThumbnail,
-                        stream = stream,
-                    )
-                    NuvioToastController.show(result.toastMessage())
-                }
-            },
-            onOpen = { stream, openExternally ->
-                onStreamActionOpen(
-                    stream,
-                    openExternally,
-                    effectiveResumePositionMs,
-                    effectiveResumeProgressFraction,
-                )
-            },
-        )
     }
 }
 

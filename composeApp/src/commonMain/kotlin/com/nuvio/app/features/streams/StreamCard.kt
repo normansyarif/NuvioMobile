@@ -26,6 +26,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Tv
+import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.streams_play_on_tv
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -43,6 +50,8 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.SkeletonBlock
 import com.nuvio.app.features.debrid.DebridProviders
+
+internal val LocalPlayOnTv = staticCompositionLocalOf<((StreamItem) -> Unit)?> { null }
 
 internal val LocalStreamHighlight = staticCompositionLocalOf<(StreamItem) -> String?> { { null } }
 
@@ -188,6 +197,20 @@ internal fun StreamCard(
                 )
             }
         }
+        LocalPlayOnTv.current?.let { playOnTv ->
+            IconButton(
+                onClick = { playOnTv(stream) },
+                enabled = enabled,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Tv,
+                    contentDescription = stringResource(Res.string.streams_play_on_tv),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
     }
 }
 

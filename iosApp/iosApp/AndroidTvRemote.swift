@@ -72,7 +72,7 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
         stopDiscovery()
         devices = selected.map { [$0] } ?? []
         discover()
-        if let selected, isPaired, !connected { connect(selected) }
+        if let selected, isPaired, !connected, state != .connecting, state != .pairing, state != .enteringCode { connect(selected) }
     }
     func resume() {
         discover()
@@ -149,9 +149,11 @@ final class AndroidTvRemote: NSObject, ObservableObject, NetServiceBrowserDelega
         // keycodes can be ignored even though the power feature is advertised.
         key(26)
     }
-    func launchNuvio() {
-        guard connected, supportsAppLaunch else { return }
+    @discardableResult
+    func launchNuvio() -> Bool {
+        guard connected, supportsAppLaunch else { return false }
         transport?.send(TVWire.bytes(90, TVWire.string(1, "nuvio-tv://home")))
+        return true
     }
     func sendText(_ text: String) {
         guard connected, supportsKeyboard, fieldActive, !text.isEmpty else { return }

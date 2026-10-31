@@ -97,7 +97,8 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
     private var services = [NetService]()
     private var devices = [Device]()
     private var operation: Task<Void, Never>?
-    private var discoveryTimeout: DispatchWorkItem?
+    private var preparation: Task<Void, Never>?
+    private var launchedHost: String?
     private var automaticPlaybackWork: DispatchWorkItem?
     private var automaticPlayback = TVAutomaticPlayback()
     private var unresolvedServices = Set<ObjectIdentifier>()
@@ -164,12 +165,14 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
         operation?.cancel()
         browser.stop()
         services.forEach { $0.stop() }
-        discoveryTimeout?.cancel()
+        preparation?.cancel()
         AndroidTvRemote.shared.stopDiscovery()
     }
 
     @objc private func search() {
         guard !busy else { return }
+        preparation?.cancel()
+        launchedHost = nil
         automaticPlaybackWork?.cancel()
         unresolvedServices.removeAll(); moreServicesComing = false; discoveryFailed = false
         AndroidTvRemote.shared.refresh()
@@ -179,16 +182,74 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
         devices.removeAll()
         tableView.reloadData()
         if !hasPlayback { setStatus(""); return }
-        setStatus("Looking for Nuvio TVs…\nKeep Nuvio open on your TV and connect both devices to the same Wi-Fi.")
+        setStatus("Looking for your TV…\nConnect both devices to the same Wi-Fi. Nuvio will open automatically if needed.")
         browser.delegate = self
         browser.searchForServices(ofType: "_nuvio-tv._tcp.", inDomain: "local.")
-        discoveryTimeout?.cancel()
-        let timeout = DispatchWorkItem { [weak self] in
-            guard let self = self, self.devices.isEmpty, !self.busy else { return }
-            self.setStatus("No TVs found. Open the updated Nuvio app on your TV, check Wi-Fi, and allow Local Network access for Nuvio in iPhone Settings. Then tap Refresh.")
+        preparePlayback()
+    }
+
+    /// Prefer the running companion; only launch through the already paired
+    /// Android TV remote when no Nuvio companion answers discovery.
+    private func preparePlayback() {
+        preparation = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                // Allow the initial Bonjour batch to arrive before launching.
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+                guard !closed, !busy, !automaticPlayback.attempted, devices.isEmpty else { return }
+                let remote = AndroidTvRemote.shared
+                setStatus("Connecting to your TV…")
+                for _ in 0..<100 {
+                    try Task.checkCancellation()
+                    guard devices.isEmpty, !busy, !closed else { return }
+                    if remote.connected { break }
+                    if remote.selected != nil && !remote.isPaired { break }
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                }
+                // Discovery can finish while the remote is connecting. Do not
+                // launch another TV or report a remote error once Nuvio is ready.
+                guard devices.isEmpty, !closed, !busy, !automaticPlayback.attempted else { return }
+                guard remote.isPaired else {
+                    throw TvError.message("Pair your TV remote below once to enable automatic Nuvio launch, then tap Refresh.")
+                }
+                guard remote.connected else {
+                    throw TvError.message("Couldn’t reach your TV. Make sure it is on and connected to the same Wi-Fi, then tap Refresh.")
+                }
+                try Task.checkCancellation()
+                guard remote.isOn != false else {
+                    throw TvError.message("Your TV is in standby. Turn it on, then tap Refresh.")
+                }
+                launchedHost = remote.selected?.host
+                guard remote.launchNuvio() else {
+                    throw TvError.message("This TV doesn’t support launching Nuvio remotely. Open Nuvio on the TV, then tap Refresh.")
+                }
+                setStatus("Opening Nuvio on your TV… Waiting for it to be ready.")
+                // Discovery readiness replaces a fixed startup delay. The /info
+                // check in startPlayback then verifies the service before sending.
+                for _ in 0..<200 {
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                    guard !closed, !busy else { return }
+                    if devices.contains(where: { matchesLaunchTarget($0) }) { return }
+                }
+                throw TvError.message("Nuvio didn’t become ready on your TV. Check that the updated Nuvio TV app is installed and both devices are on the same Wi-Fi, then tap Refresh.")
+            } catch is CancellationError { }
+            catch {
+                guard !closed, !Task.isCancelled else { return }
+                showPlaybackError(error)
+            }
         }
-        discoveryTimeout = timeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: timeout)
+    }
+
+    private func showPlaybackError(_ error: Error) {
+        setStatus(error.localizedDescription + "\nTap Refresh or select a TV to try again.")
+        guard !closed, presentedViewController == nil else { return }
+        let alert = UIAlertController(title: "Couldn’t play on TV", message: error.localizedDescription, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+
+    private func matchesLaunchTarget(_ device: Device) -> Bool {
+        launchedHost == nil || device.baseURL.host?.caseInsensitiveCompare(launchedHost!) == .orderedSame
     }
 
     private func setStatus(_ text: String) {
@@ -284,6 +345,7 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
             guard let self, !self.discoveryFailed else { return }
             let device = self.devices.first
             let paired = device.flatMap { TvCredentials.token(for: $0.id) } != nil
+            guard device.map({ self.matchesLaunchTarget($0) }) == true else { return }
             guard self.automaticPlayback.claim(
                 hasPlayback: self.hasPlayback, deviceCount: self.devices.count,
                 serviceCount: self.services.count, unresolvedCount: self.unresolvedServices.count,
@@ -302,6 +364,7 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
     }
     private func startPlayback(on device: Device) {
         guard !busy, !closed else { return }
+        preparation?.cancel()
         automaticPlayback.suppress(); automaticPlaybackWork?.cancel()
         if let host = device.baseURL.host { AndroidTvRemote.shared.selectCompanion(host: host) }
         run { [self] in
@@ -331,7 +394,7 @@ private final class TvPickerController: UITableViewController, NetServiceBrowser
             do { try await work() }
             catch is CancellationError { }
             catch {
-                if !Task.isCancelled { self.setStatus(error.localizedDescription + "\nYou can select the TV to try again.") }
+                if !Task.isCancelled { self.showPlaybackError(error) }
             }
         }
     }
